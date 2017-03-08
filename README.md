@@ -53,6 +53,10 @@ cp /srv/kubernetes/ca.crt ~/
 """
 We do this for each user we want to add.  When you're done, retrieve the keys from the master and distribute as appropriate.
 
+### But Why?
+
+That's actually a pretty good question in this context.  If our keys get compromised, we don't have any way to invalidate it.  We have to recreate all the certs and CA.
+
 
 ## AuthZ -- Next step, modify known_tokens.csv
 
@@ -196,6 +200,20 @@ or basically adding this after the binary:
 """
 --authorization-mode=ABAC --authorization-policy-file=/srv/kubernetes/abac-authn.json 
 """
+
+or even better just running this sed on it:
+
+"""
+sed -i 's/bin\/kube-apiserver /bin\/kube-apiserver --authorization-mode=ABAC --authorization-policy-file=\/srv\/kubernetes\/abac-authn.json /' kube-apiserver.manifest
+"""
+(with a minor modification if you're running this on a mac)
+
+"""
+sed -i '.bak' 's/bin\/kube-apiserver /bin\/kube-apiserver --authorization-mode=ABAC --authorization-policy-file=\/srv\/kubernetes\/abac-authn.json /' kube-apiserver.manifest
+"""
+
+
+
 
 to get it picked up you can run this:
 
