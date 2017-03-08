@@ -27,11 +27,11 @@ particularly this overview doc:
 
 We want to create a separate cert for each user that we're going to support.  This is the authorization state -- basically the certs generated will tell the kube-api that we're ok to talk to it.
 
-"""
+```
   openssl genrsa -out tcotav.pem 2048
   openssl req -new -key tcotav.pem -out tcotav.csr -subj "/CN=tcotav,O=admin"
   openssl x509 -req -in tcotav.csr -CA /srv/kubernetes/server.cert -CAkey /srv/kubernetes/server.key -CAcreateserial -out tcotav.crt -days 365
-"""
+```
 
 
 Or use the keygen script
@@ -42,15 +42,16 @@ Or use the keygen script
 
 this will generate the following files:
 
-  - <NEWNAME>.crt
-  - <NEWNAME>.csr
-  - <NEWNAME>.pem
+  - \<NEWNAME\>.crt
+  - \<NEWNAME\>.csr
+  - \<NEWNAME\>.pem
 
 Also copy the `ca.crt` to your HOME dir as well as this is required in your kubeconfig later.
 
-"""
+```
 cp /srv/kubernetes/ca.crt ~/
-"""
+```
+
 We do this for each user we want to add.  When you're done, retrieve the keys from the master and distribute as appropriate.
 
 ### But Why?
@@ -64,15 +65,15 @@ We'll be adding our user, NEWNAME, into the known_tokens.csv file.  This is the 
 
 You can create some random noise to be your token by running this on the unix master host (stolen from the internet):
 
-"""
+```
 dd if=/dev/urandom bs=128 count=1 2>/dev/null | base64 | tr -d "=+/" | dd bs=32 count=1 2>/dev/null
-"""
+```
 
 take whatever is gen'd there and add a line to the file in format like the following:
 
-"""
+```
 1R2l9tgQ1i42H0Im9ueBTYxKK0Qkk8Y7,tcotav,kube
-"""
+```
 
 To pick this change up, we'll have to restart kube-apiserver, but lets wait on that.
 
@@ -85,7 +86,7 @@ Alternately, you can use `htpasswd` to generate a `basic_auth` password if you'd
 
 Here's a sample snippet of what the user section of a kubeconfig would look like using the values we generated for user "tcotav" -- keys, ca.cert, and the token, after copying all the certs and pem to my local laptop:
 
-"""
+```
 apiVersion: v1
 clusters:
 - cluster:
@@ -112,7 +113,7 @@ users:
     token: 1R2l9tgQ1i42H0Im9ueBTYxKK0Qkk8Y7
 #    password: 1R2l9tgQ1i42H0Im9ueBTYxKK0Qkk8Y7
 #    username: tcotav
-"""
+```
 
 I assembled this manually, but you should [do it the right way and use kubectl](https://kubernetes.io/docs/user-guide/kubectl/kubectl_config_set-credentials/)
 
@@ -122,23 +123,23 @@ I assembled this manually, but you should [do it the right way and use kubectl](
 
 Don't do this right now but its handy to have if you need to. To restart the kube-apiserver docker container, we first have to find it:
 
-"""
+```
 docker ps | grep kube-api
-"""
+```
 
 Here's a magical incantation that'll grab the first one (which should be the running one), grabs the container id, and then does the kill on it:
 
-"""
+```
 docker ps | grep kube-api | head -n1 | cut -c1-12 | xargs docker kill
-"""
+```
 
 This will kill the former container and start a new one (picking up the new configs along the way).
 
 If you run the following again:
 
-"""
+```
 docker ps | grep kube-api
-"""
+```
 
 you'll see the uptime on the apiserver shows the restart.
 
@@ -152,15 +153,15 @@ We're going to use this to lock down specific users to specific namespaces.  Thi
 
 Edit the file "abac-authn.json" included in this repo to add the users you've added to your overall cluster -- adding one line per user
 
-"""
+```
 {"apiVersion": "abac.authorization.kubernetes.io/v1beta1", "kind": "Policy", "spec": {"user":"tcotav", "namespace":"\*", "resource": "\*", "apiGroup": "\*", "nonResourcePath": "\*"}}
-"""
+```
 
 Lock down what you need to lock down for that user.  For example, we create a namespace "sox" and want to lock down user tcotav-sox to that namespace, then we'd create a line like this:
 
-"""
+```
 {"apiVersion": "abac.authorization.kubernetes.io/v1beta1", "kind": "Policy", "spec": {"user":"tcotav-sox", "namespace":"sox", "resource": "\*", "apiGroup": "\*", "nonResourcePath": "\*"}}
-"""
+```
 
 ### What's an ABAC file?
 
@@ -172,34 +173,34 @@ Copy both `abac-authn.json` up to the master.
 
 On the master,
 
-"""
+```
 sudo cp abac-authn.json /srv/kubernetes
-"""
+```
 
 Now the potentially tricky part -- we're going to modify the `kube-apiserver.manifest` file.  If you're worried that you'll mess up, make a copy of the original.  We'll also be copying over one for us to modify.
 
-"""
+```
 cp /etc/kubernetes/manifests/kube-apiserver.manifest ./kube-apiserver.manifest.original
 cp /etc/kubernetes/manifests/kube-apiserver.manifest ./kube-apiserver.manifest
-"""
+```
 
 Open kube-apiserver.manifest and change the following line:
 
-"""
+```
     - "/usr/local/bin/kube-apiserver --address=127.0.0.1 --admission-control=NamespaceLifecycle,LimitRanger,ServiceAccount,PersistentVolumeLabel,DefaultStorageClass,ResourceQuota --allow-privileged=true --anonymous-auth=false --apiserver-count=1 --basic-auth-file=/srv/kubernetes/basic_auth.csv --client-ca-file=/srv/kubernetes/ca.crt --cloud-provider=aws --etcd-servers-overrides=/events#http://127.0.0.1:4002 --etcd-servers=http://127.0.0.1:4001 --kubelet-preferred-address-types=InternalIP,Hostname,ExternalIP,LegacyHostIP --secure-port=443 --service-cluster-ip-range=100.64.0.0/13 --storage-backend=etcd2 --tls-cert-file=/srv/kubernetes/server.cert --tls-private-key-file=/srv/kubernetes/server.key --token-auth-file=/srv/kubernetes/known_tokens.csv --v=2 1>>/var/log/kube-apiserver.log 2>&1"
-"""
+```
 
 to look like this:
 
-"""
+```
     - "/usr/local/bin/kube-apiserver --authorization-mode=ABAC --authorization-policy-file=/srv/kubernetes/abac-authn.json --address=127.0.0.1 --admission-control=NamespaceLifecycle,LimitRanger,ServiceAccount,PersistentVolumeLabel,DefaultStorageClass,ResourceQuota --allow-privileged=true --anonymous-auth=false --apiserver-count=1 --basic-auth-file=/srv/kubernetes/basic_auth.csv --client-ca-file=/srv/kubernetes/ca.crt --cloud-provider=aws --etcd-servers-overrides=/events#http://127.0.0.1:4002 --etcd-servers=http://127.0.0.1:4001 --kubelet-preferred-address-types=InternalIP,Hostname,ExternalIP,LegacyHostIP --secure-port=443 --service-cluster-ip-range=100.64.0.0/13 --storage-backend=etcd2 --tls-cert-file=/srv/kubernetes/server.cert --tls-private-key-file=/srv/kubernetes/server.key --token-auth-file=/srv/kubernetes/known_tokens.csv --v=2 1>>/var/log/kube-apiserver.log 2>&1"
-"""
+```
 
 or basically adding this after the binary:
 
-"""
+```
 --authorization-mode=ABAC --authorization-policy-file=/srv/kubernetes/abac-authn.json 
-"""
+```
 
 or even better just running this sed on it:
 
@@ -217,9 +218,9 @@ sed -i '.bak' 's/bin\/kube-apiserver /bin\/kube-apiserver --authorization-mode=A
 
 to get it picked up you can run this:
 
-"""
+```
 sudo cp kube-apiserver.manifest /etc/kubernetes/manifest/
-"""
+```
 
 `kubelet` will note the change and reload the container with the new config.  You shoudn't have to do anything else at this point other than prepare to test.
 
