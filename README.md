@@ -204,14 +204,14 @@ or basically adding this after the binary:
 
 or even better just running this sed on it:
 
-"""
+```
 sed -i 's/bin\/kube-apiserver /bin\/kube-apiserver --authorization-mode=ABAC --authorization-policy-file=\/srv\/kubernetes\/abac-authn.json /' kube-apiserver.manifest
-"""
+```
 (with a minor modification if you're running this on a mac)
 
-"""
+```
 sed -i '.bak' 's/bin\/kube-apiserver /bin\/kube-apiserver --authorization-mode=ABAC --authorization-policy-file=\/srv\/kubernetes\/abac-authn.json /' kube-apiserver.manifest
-"""
+```
 
 
 
